@@ -1,13 +1,13 @@
-const express = require('express')
+import express from 'express'
+import dotenv from 'dotenv'
+import mongoose from 'mongoose'
+import { signUser, loginUser } from './src/services/auth.services.js'
+
+dotenv.config()
+
 const app = express()
-const dotenv = require('dotenv').config()
-const bcrypt = require('bcrypt')
-const mongoose = require('mongoose')
-const User = require('./model/user.model')
 const port = process.env.NODE_PORT
 const url = process.env.MONGODB_URL
-
-app.use(express.json())
 
 async function startServer() {
     try {
@@ -23,74 +23,45 @@ async function startServer() {
     }
 }
 
-app.post('/register', async (req, res) => {
-    const reqFields = ['email', 'username', 'password', 'confirmPassword']
+app.use(express.json())
 
-    const errors = reqFields.reduce((acc, field) => {
-        if (!req.body[field]) acc[field] = `Missing ${field}`
-        return acc
-    }, {})
-
-    if (Object.keys(errors).length != 0) {
-        return res.status(400).json({
-            error: 'Missing parameters',
-            details: errors,
-        })
-    }
-
-    const { email, username, password, confirmPassword } = req.body
-
-    if (password != confirmPassword) {
-        return res.status(400).json('Password mismatch')
-    }
-
-    // bcrypt.hash(password.toString(), 10, (err, hash) => {
-    //     if (err) throw err
-    //     console.log(hash)
-    // })
-
+app.post('/signup', async (req, res, next) => {
     try {
-        const hash = await bcrypt.hash(password.toString(), 10)
-        await User.create({ email: email, username: username, password: hash })
-        res.json('Welcome')
-    } catch (err) {
-        console.log(err)
-        res.json({ error: 'User already exists' })
+        await signUser(req.body)
+        res.json({ message: 'Account created' })
+    } catch (e) {
+        next(e)
     }
 })
 
-app.post('/login', async (req, res) => {
-    const reqFields = ['email', 'password']
-
-    const errors = reqFields.reduce((acc, field) => {
-        if (!req.body[field]) acc[field] = `Missing ${field}`
-        return acc
-    }, {})
-
-    if (Object.keys(errors).length != 0) {
-        res.status(400).json({
-            error: 'Missing parameters',
-            details: errors,
-        })
-    }
-
-    const { email, password } = req.body
-
+app.post('/login', async (req, res, next) => {
     try {
-        const person = await User.findOne({ email: email })
-        const match = await bcrypt.compare(password.toString(), person.password)
-        if (!match) {
-            return res.status(401).json({ error: 'Passowrd mismatch' })
-        }
-    } catch (err) {
-        console.log(err)
+        const token = await loginUser(req.body)
+        res.json({ token })
+    } catch (e) {
+        next(e)
     }
-
-    res.json('Welcome')
 })
 
 app.get('/', (req, res) => {
     res.json('Hello World!')
+})
+
+app.get('/protected', (req, res) => {
+    try {
+        const token = req.headers.authorization.split(' ')[1]
+        const decoded = jwt.verify(token, process.env.JWT_SECRET)
+        res.send(decoded)
+    } catch (e) {
+        res.status(401).json({ error: 'Unauthorized' })
+    }
+})
+
+app.use((err, req, res, next) => {
+    res.status(err.status || 500).json({
+        error: err.message,
+        details: err.details,
+    })
 })
 
 startServer()
